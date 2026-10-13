@@ -47,6 +47,28 @@ def create_intake(
             engine.dispose()
 
 
+def save_triage(
+    intake_id: int,
+    *,
+    summary: str,
+    tags: dict,
+    risks: list[str],
+    engine: Engine,
+) -> Intake:
+    """Attach validated AI output to an intake that was already saved."""
+
+    with Session(engine, expire_on_commit=False) as session:
+        intake = session.get(Intake, intake_id)
+        if intake is None:
+            raise ValueError("intake no longer exists")
+        intake.summary = summary
+        intake.tags = tags
+        intake.risks = risks
+        session.commit()
+        session.refresh(intake)
+        return intake
+
+
 def list_intakes(*, engine: Engine | None = None) -> list[Intake]:
     """Return every intake in ID order."""
 

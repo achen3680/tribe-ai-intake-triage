@@ -50,6 +50,7 @@ def test_post_intake_creates_and_returns_saved_record(client):
     assert body["summary"] == "This is a customer support project. It will answer questions."
     assert body["tags"] == {"industry": "retail", "budget": "medium", "timeline": "near-term"}
     assert body["risks"] == ["Confirm the knowledge base is current."]
+    assert body["triage_status"] == "complete"
 
     with Session(app.state.engine) as session:
         saved = session.get(Intake, body["id"])
@@ -60,16 +61,22 @@ def test_post_intake_creates_and_returns_saved_record(client):
         assert saved.risks == body["risks"]
 
 
-def test_ai_failure_does_not_save_intake(client, monkeypatch):
+def test_ai_failure_still_saves_intake(client, monkeypatch):
     def fail(_intake):
         raise RuntimeError("provider unavailable")
 
     monkeypatch.setattr("backend.api.generate_triage", fail)
     response = client.post("/intakes", json=VALID_INTAKE)
-    assert response.status_code == 503
-    assert "not saved" in response.json()["detail"]
+    assert response.status_code == 201
+    body = response.json()
+    assert body["id"] == 1
+    assert body["triage_status"] == "unavailable"
+    assert body["summary"] is None
+    assert body["tags"] is None
+    assert body["risks"] is None
+    assert client.get(f"/intakes/{body['id']}").json() == body
     with Session(app.state.engine) as session:
-        assert session.scalar(select(func.count()).select_from(Intake)) == 0
+        assert session.scalar(select(func.count()).select_from(Intake)) == 1
 
 
 @pytest.mark.parametrize("field", VALID_INTAKE)

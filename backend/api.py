@@ -4,18 +4,23 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import datetime
+import logging
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from anthropic import APIError
 from dotenv import load_dotenv
 
 from fastapi import FastAPI, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, computed_field, field_validator
+from sqlalchemy.exc import SQLAlchemyError
 
 from backend.database import init_db, make_engine
-from backend.intakes import create_intake, get_intake, list_intakes
+from backend.intakes import create_intake, get_intake, list_intakes, save_triage
 from backend.triage import Tags, generate_triage
+
+
+logger = logging.getLogger(__name__)
 
 
 class CreateIntakeRequest(BaseModel):
@@ -47,6 +52,11 @@ class IntakeResponse(CreateIntakeRequest):
     tags: Optional[Tags]
     risks: Optional[list[str]]
 
+    @computed_field
+    @property
+    def triage_status(self) -> Literal["complete", "unavailable"]:
+        return "complete" if self.summary and self.tags and self.risks else "unavailable"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -65,19 +75,12 @@ app = FastAPI(lifespan=lifespan)
 
 @app.post("/intakes", response_model=IntakeResponse, status_code=status.HTTP_201_CREATED)
 def post_intake(payload: CreateIntakeRequest, request: Request) -> IntakeResponse:
-    ## decision to keep the intake in the database, show no AI triage available, instead of blocking intake creation entirely
+    intake = create_intake(**payload.model_dump(), engine=request.app.state.engine)
     try:
         triage = generate_triage(payload.model_dump())
-    except (APIError, RuntimeError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI triage is unavailable; intake was not saved. Please retry.",
-        ) from exc
-    intake = create_intake(
-        **payload.model_dump(),
-        **triage.model_dump(),
-        engine=request.app.state.engine,
-    )
+        intake = save_triage(intake.id, **triage.model_dump(), engine=request.app.state.engine)
+    except (APIError, RuntimeError, ValueError, SQLAlchemyError) as exc:
+        logger.warning("AI triage unavailable for intake %s: %s", intake.id, type(exc).__name__)
     return IntakeResponse.model_validate(intake, from_attributes=True)
 
 

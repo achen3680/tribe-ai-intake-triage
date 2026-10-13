@@ -43,8 +43,8 @@ export it in the server environment. Startup loads `.env` without overriding an
 exported value. `ANTHROPIC_MODEL` is optional and defaults to
 `claude-haiku-4-5-20251001`. Restart the server after changing `.env`.
 
-`POST /intakes` sends the five intake fields to Claude using its JSON-schema
-structured output mode. It returns and persists a 2–3 sentence `summary`, a
+`POST /intakes` first saves the submitted fields, then sends them to Claude using
+its JSON-schema structured output mode. When triage succeeds, it persists a 2–3 sentence `summary`, a
 `tags` object with exactly `industry`, `budget`, and `timeline`, and a `risks`
 array of 1–5 checklist items. The three tag slots use these draft categories:
 
@@ -54,8 +54,11 @@ array of 1–5 checklist items. The three tag slots use these draft categories:
 | Budget | `small`, `medium`, `large`, `unknown` | USD range midpoint: under $25k, $25k–$100k, over $100k; unknown if not interpretable. |
 | Timeline | `urgent`, `near-term`, `long-term`, `unknown` | Due within 4 weeks, 1–3 months, over 3 months; unknown if not interpretable. |
 
-The server validates the output and saves the intake only after valid AI triage
-is returned. A provider or validation failure returns HTTP 503 with a retry
-message and does not create a partial record. Existing rows from before this
-feature remain readable with null AI fields; startup adds the three columns to
-an existing SQLite table. Run all backend tests with `python3 -m pytest -q`.
+The server validates AI output before attaching it to the saved intake. If
+Claude is unavailable or its output fails validation, `POST /intakes` still
+returns HTTP 201 with the saved intake. In that case, `summary`, `tags`, and
+`risks` are null and `triage_status` is `unavailable`; successful enrichment has
+`triage_status: "complete"`. The list and detail endpoints expose the same
+status. Existing rows from before this feature remain readable with null AI
+fields; startup adds the three columns to an existing SQLite table. Run all
+backend tests with `python3 -m pytest -q`.
