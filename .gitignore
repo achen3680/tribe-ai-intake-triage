@@ -4,6 +4,7 @@
 node_modules/
 .next/
 dist/
+*.tsbuildinfo
 build/
 backend/data/
 *.db

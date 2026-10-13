@@ -1,5 +1,18 @@
 # Intake triage app
 
+## Frontend
+
+From this directory, start the API with `python3 -m uvicorn backend.api:app --reload`.
+In another terminal, run `cd frontend`, `npm install`, and `npm run dev`, then open
+`http://127.0.0.1:5173/`. The landing page loads all saved intakes automatically
+(newest first), with search and a detail drawer. The Vite development server
+proxies `/api/*` to the FastAPI server on port 8000, so both servers must be
+running. The page shows loading, empty, and connection error states.
+
+Run `npm run build` from `frontend/` to type-check and build the production
+assets. A production host must route `/api/*` to the FastAPI server as the
+development proxy does.
+
 ## Database setup
 
 Install the backend dependency with `python3 -m pip install -r requirements.txt`.
