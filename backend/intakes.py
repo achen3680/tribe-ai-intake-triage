@@ -17,6 +17,9 @@ def create_intake(
     budget_range: str,
     timeline: str,
     industry: str,
+    summary: str | None = None,
+    tags: dict | None = None,
+    risks: list[str] | None = None,
     engine: Engine | None = None,
 ) -> Intake:
     """Save a new intake and return it with its database ID and timestamp."""
@@ -31,6 +34,9 @@ def create_intake(
                 budget_range=budget_range,
                 timeline=timeline,
                 industry=industry,
+                summary=summary,
+                tags=tags,
+                risks=risks,
             )
             session.add(intake)
             session.commit()

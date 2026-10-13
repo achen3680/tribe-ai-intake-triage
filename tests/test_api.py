@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from backend.api import app
 from backend.models import Intake
+from backend.triage import TriageResult
 
 
 VALID_INTAKE = {
@@ -23,6 +24,14 @@ VALID_INTAKE = {
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
+    monkeypatch.setattr(
+        "backend.api.generate_triage",
+        lambda intake: TriageResult.model_validate({
+            "summary": "This is a customer support project. It will answer questions.",
+            "tags": {"industry": "retail", "budget": "medium", "timeline": "near-term"},
+            "risks": ["Confirm the knowledge base is current."],
+        }),
+    )
     with TestClient(app) as test_client:
         yield test_client
 
@@ -38,11 +47,29 @@ def test_post_intake_creates_and_returns_saved_record(client):
         key: value for key, value in VALID_INTAKE.items() if key != "title"
     }
     assert datetime.fromisoformat(body["created_at"].replace("Z", "+00:00")).tzinfo == timezone.utc
+    assert body["summary"] == "This is a customer support project. It will answer questions."
+    assert body["tags"] == {"industry": "retail", "budget": "medium", "timeline": "near-term"}
+    assert body["risks"] == ["Confirm the knowledge base is current."]
 
     with Session(app.state.engine) as session:
         saved = session.get(Intake, body["id"])
         assert saved is not None
         assert saved.title == "Pilot"
+        assert saved.summary == body["summary"]
+        assert saved.tags == body["tags"]
+        assert saved.risks == body["risks"]
+
+
+def test_ai_failure_does_not_save_intake(client, monkeypatch):
+    def fail(_intake):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr("backend.api.generate_triage", fail)
+    response = client.post("/intakes", json=VALID_INTAKE)
+    assert response.status_code == 503
+    assert "not saved" in response.json()["detail"]
+    with Session(app.state.engine) as session:
+        assert session.scalar(select(func.count()).select_from(Intake)) == 0
 
 
 @pytest.mark.parametrize("field", VALID_INTAKE)

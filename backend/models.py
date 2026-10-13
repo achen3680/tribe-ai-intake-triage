@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Optional
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import JSON, DateTime, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, MappedAsDataclass, mapped_column
 from sqlalchemy.types import TypeDecorator
 
@@ -43,6 +44,9 @@ class Intake(Base):
     budget_range: Mapped[str] = mapped_column(String, nullable=False)
     timeline: Mapped[str] = mapped_column(String, nullable=False)
     industry: Mapped[str] = mapped_column(String, nullable=False)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+    tags: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True, default=None)
+    risks: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         UTCDateTime(),
         nullable=False,

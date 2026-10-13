@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.engine import Engine
 
 from backend.models import Base
@@ -26,9 +26,20 @@ def make_engine(database_url: str | None = None) -> Engine:
 
 
 def init_db(engine: Engine | None = None) -> None:
-    """Create the intake table if it does not already exist."""
+    """Create the table and add AI columns to an existing scaffold database."""
 
-    Base.metadata.create_all(engine or make_engine())
+    owns_engine = engine is None
+    engine = engine or make_engine()
+    try:
+        Base.metadata.create_all(engine)
+        columns = {column["name"] for column in inspect(engine).get_columns("intakes")}
+        with engine.begin() as connection:
+            for name, sql_type in (("summary", "TEXT"), ("tags", "JSON"), ("risks", "JSON")):
+                if name not in columns:
+                    connection.exec_driver_sql(f"ALTER TABLE intakes ADD COLUMN {name} {sql_type}")
+    finally:
+        if owns_engine:
+            engine.dispose()
 
 
 if __name__ == "__main__":

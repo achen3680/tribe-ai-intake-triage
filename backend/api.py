@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from anthropic import APIError
+from dotenv import load_dotenv
 
 from fastapi import FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from backend.database import init_db, make_engine
 from backend.intakes import create_intake, get_intake, list_intakes
+from backend.triage import Tags, generate_triage
 
 
 class CreateIntakeRequest(BaseModel):
@@ -37,10 +43,14 @@ class IntakeResponse(CreateIntakeRequest):
 
     id: int
     created_at: datetime
+    summary: Optional[str]
+    tags: Optional[Tags]
+    risks: Optional[list[str]]
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env", override=False)
     engine = make_engine()
     try:
         init_db(engine)
@@ -55,7 +65,19 @@ app = FastAPI(lifespan=lifespan)
 
 @app.post("/intakes", response_model=IntakeResponse, status_code=status.HTTP_201_CREATED)
 def post_intake(payload: CreateIntakeRequest, request: Request) -> IntakeResponse:
-    intake = create_intake(**payload.model_dump(), engine=request.app.state.engine)
+    ## decision to keep the intake in the database, show no AI triage available, instead of blocking intake creation entirely
+    try:
+        triage = generate_triage(payload.model_dump())
+    except (APIError, RuntimeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI triage is unavailable; intake was not saved. Please retry.",
+        ) from exc
+    intake = create_intake(
+        **payload.model_dump(),
+        **triage.model_dump(),
+        engine=request.app.state.engine,
+    )
     return IntakeResponse.model_validate(intake, from_attributes=True)
 
 

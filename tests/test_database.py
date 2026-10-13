@@ -20,9 +20,12 @@ def test_intake_table_and_persistence(tmp_path):
     assert is_dataclass(Intake)
     columns = {column["name"]: column for column in inspect(engine).get_columns("intakes")}
     assert set(columns) == {
-        "id", "title", "description", "budget_range", "timeline", "industry", "created_at"
+        "id", "title", "description", "budget_range", "timeline", "industry", "created_at",
+        "summary", "tags", "risks",
     }
-    assert all(not column["nullable"] for column in columns.values())
+    assert all(not columns[name]["nullable"] for name in (
+        "id", "title", "description", "budget_range", "timeline", "industry", "created_at"
+    ))
 
     intake = Intake(
         title="Pilot",
@@ -72,6 +75,31 @@ def test_create_intake_saves_sample_data(tmp_path):
         assert saved.timeline == "3 months"
         assert saved.industry == "Retail"
         assert saved.created_at == created.created_at
+
+
+def test_init_db_adds_ai_columns_to_existing_table(tmp_path):
+    engine = make_engine(f"sqlite:///{tmp_path / 'legacy.db'}")
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE intakes (id INTEGER PRIMARY KEY, title VARCHAR NOT NULL, "
+            "description TEXT NOT NULL, budget_range VARCHAR NOT NULL, "
+            "timeline VARCHAR NOT NULL, industry VARCHAR NOT NULL, created_at DATETIME NOT NULL)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO intakes VALUES (1, 'Existing', 'Original intake', '$10k', "
+            "'2 months', 'Retail', '2026-01-01 00:00:00')"
+        )
+
+    init_db(engine)
+    init_db(engine)
+
+    with Session(engine) as session:
+        saved = session.get(Intake, 1)
+        assert saved is not None
+        assert saved.title == "Existing"
+        assert saved.summary is None
+        assert saved.tags is None
+        assert saved.risks is None
 
 
 @pytest.mark.parametrize(
