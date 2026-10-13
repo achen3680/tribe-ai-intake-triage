@@ -62,3 +62,12 @@ returns HTTP 201 with the saved intake. In that case, `summary`, `tags`, and
 status. Existing rows from before this feature remain readable with null AI
 fields; startup adds the three columns to an existing SQLite table. Run all
 backend tests with `python3 -m pytest -q`.
+
+To verify the complete Claude path with a real API key, run
+`RUN_LIVE_AI_TESTS=1 python3 -m pytest tests/test_ai_integration.py -q`.
+The test creates two intakes in a temporary SQLite database, checks that each
+Claude response contains a valid summary, all three tags, and a risk checklist,
+then checks that list/detail responses and SQLite retain those outputs. It makes
+at least two billable API calls; a locally invalid Claude result is retried once.
+The normal test suite skips this test unless the flag is
+set.
