@@ -21,7 +21,7 @@ Run the database test with `python3 -m pytest tests/test_database.py`.
 ## Create intake API
 
 Install dependencies with `python3 -m pip install -r requirements.txt`, then run
-`python3 -m uvicorn backend.API:app --reload` from this directory. The API creates
+`python3 -m uvicorn backend.api:app --reload` from this directory. The API creates
 the SQLite table on startup. `POST /intakes` accepts JSON with `title`,
 `description`, `budget_range`, `timeline`, and `industry`. Every field must be a
 nonempty string; whitespace around values is removed. A successful request

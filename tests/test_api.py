@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.API import app
+from backend.api import app
 from backend.models import Intake
 
 
