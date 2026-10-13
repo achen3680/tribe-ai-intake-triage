@@ -1,4 +1,4 @@
-"""HTTP entry points for creating and reading intakes."""
+"""HTTP entry points for creating, reading, updating, and deleting intakes."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, computed_field, field_validator
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.database import init_db, make_engine
-from backend.intakes import create_intake, get_intake, list_intakes, save_triage
+from backend.intakes import create_intake, delete_intake, get_intake, list_intakes, save_triage, update_intake
 from backend.triage import Tags, generate_triage
 
 
@@ -96,3 +96,22 @@ def get_intake_detail(intake_id: int, request: Request) -> IntakeResponse:
     if intake is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Intake not found")
     return IntakeResponse.model_validate(intake, from_attributes=True)
+
+
+@app.put("/intakes/{intake_id}", response_model=IntakeResponse)
+def put_intake(intake_id: int, payload: CreateIntakeRequest, request: Request) -> IntakeResponse:
+    intake = update_intake(intake_id, **payload.model_dump(), engine=request.app.state.engine)
+    if intake is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Intake not found")
+    try:
+        triage = generate_triage(payload.model_dump())
+        intake = save_triage(intake.id, **triage.model_dump(), engine=request.app.state.engine)
+    except (APIError, RuntimeError, ValueError, SQLAlchemyError) as exc:
+        logger.warning("AI triage unavailable for updated intake %s: %s", intake.id, type(exc).__name__)
+    return IntakeResponse.model_validate(intake, from_attributes=True)
+
+
+@app.delete("/intakes/{intake_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_intake_detail(intake_id: int, request: Request) -> None:
+    if not delete_intake(intake_id, engine=request.app.state.engine):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Intake not found")

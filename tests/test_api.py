@@ -128,3 +128,74 @@ def test_get_intake_by_id_returns_404_when_missing(client):
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Intake not found"}
+
+
+def test_put_intake_updates_fields_and_retriages(client):
+    original = client.post("/intakes", json=VALID_INTAKE).json()
+    correction = {**VALID_INTAKE, "title": "  Corrected pilot  ", "industry": "Finance"}
+
+    response = client.put(f"/intakes/{original['id']}", json=correction)
+
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["title"] == "Corrected pilot"
+    assert updated["industry"] == "Finance"
+    assert updated["id"] == original["id"]
+    assert updated["created_at"] == original["created_at"]
+    assert updated["triage_status"] == "complete"
+    assert client.get(f"/intakes/{original['id']}").json() == updated
+    assert client.get("/intakes").json() == [updated]
+
+
+def test_put_intake_clears_stale_triage_when_regeneration_fails(client, monkeypatch):
+    original = client.post("/intakes", json=VALID_INTAKE).json()
+
+    def fail(_intake):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr("backend.api.generate_triage", fail)
+    response = client.put(f"/intakes/{original['id']}", json={**VALID_INTAKE, "description": "Corrected scope"})
+
+    assert response.status_code == 200
+    assert response.json()["description"] == "Corrected scope"
+    assert response.json()["triage_status"] == "unavailable"
+    assert response.json()["summary"] is None
+    assert response.json()["tags"] is None
+    assert response.json()["risks"] is None
+
+
+def test_put_intake_rejects_invalid_fields_without_changing_record(client):
+    original = client.post("/intakes", json=VALID_INTAKE).json()
+    response = client.put(f"/intakes/{original['id']}", json={**VALID_INTAKE, "title": "  "})
+
+    assert response.status_code == 422
+    assert client.get(f"/intakes/{original['id']}").json() == original
+
+
+def test_put_intake_returns_404_when_missing(client):
+    response = client.put("/intakes/999", json=VALID_INTAKE)
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Intake not found"}
+
+
+def test_delete_intake_removes_only_requested_record(client):
+    first = client.post("/intakes", json=VALID_INTAKE).json()
+    second = client.post("/intakes", json={**VALID_INTAKE, "title": "Keep me"}).json()
+
+    response = client.delete(f"/intakes/{first['id']}")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert client.get(f"/intakes/{first['id']}").status_code == 404
+    assert client.get("/intakes").json() == [second]
+    with Session(app.state.engine) as session:
+        assert session.get(Intake, first["id"]) is None
+        assert session.get(Intake, second["id"]) is not None
+
+
+def test_delete_intake_returns_404_when_missing(client):
+    response = client.delete("/intakes/999")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Intake not found"}
