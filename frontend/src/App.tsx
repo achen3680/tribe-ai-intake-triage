@@ -49,8 +49,12 @@ const emptyFields: IntakeFields = {
   title: '', description: '', budget_range: '', timeline: '', industry: '',
 }
 
-function CreateIntakeForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (intake: Intake) => void }) {
-  const [fields, setFields] = useState<IntakeFields>(emptyFields)
+function IntakeForm({ intake, onCancel, onSaved }: { intake?: Intake; onCancel: () => void; onSaved: (intake: Intake) => void }) {
+  const editing = Boolean(intake)
+  const [fields, setFields] = useState<IntakeFields>(intake ? {
+    title: intake.title, description: intake.description, budget_range: intake.budget_range,
+    timeline: intake.timeline, industry: intake.industry,
+  } : emptyFields)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
 
@@ -65,28 +69,28 @@ function CreateIntakeForm({ onCancel, onCreated }: { onCancel: () => void; onCre
       Object.entries(fields).map(([key, value]) => [key, value.trim()]),
     ) as IntakeFields
     if (Object.values(payload).some((value) => !value)) {
-      setSubmitError('Complete every field before creating the intake.')
+      setSubmitError('Complete every field before saving the intake.')
       return
     }
     setSubmitting(true)
     setSubmitError('')
     try {
-      const response = await fetch('/api/intakes', {
-        method: 'POST',
+      const response = await fetch(editing ? `/api/intakes/${intake!.id}` : '/api/intakes', {
+        method: editing ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
       if (!response.ok) {
         if (response.status === 422) throw new Error('Check the fields and try again.')
-        throw new Error(`The intake could not be created (${response.status}).`)
+        throw new Error(`The intake could not be ${editing ? 'updated' : 'created'} (${response.status}).`)
       }
-      const created: Intake = await response.json()
-      if (!created.id) throw new Error('The server returned an unexpected response.')
-      onCreated(created)
+      const saved: Intake = await response.json()
+      if (!saved.id) throw new Error('The server returned an unexpected response.')
+      onSaved(saved)
     } catch (cause) {
       setSubmitError(cause instanceof TypeError
         ? 'Could not confirm whether the intake was saved. Check the list before trying again.'
-        : cause instanceof Error ? cause.message : 'The intake could not be created. Try again.')
+        : cause instanceof Error ? cause.message : 'The intake could not be saved. Try again.')
     } finally {
       setSubmitting(false)
     }
@@ -94,9 +98,9 @@ function CreateIntakeForm({ onCancel, onCreated }: { onCancel: () => void; onCre
 
   return <div className="page-content create-page">
     <div className="create-heading">
-      <div className="eyebrow">NEW OPPORTUNITY <span className="eyebrow-line" /></div>
-      <h1 id="page-title">Create intake<span className="heading-period">.</span></h1>
-      <p>Capture the essentials. We’ll summarize and triage the intake when you create it.</p>
+      <div className="eyebrow">{editing ? 'CORRECT OPPORTUNITY' : 'NEW OPPORTUNITY'} <span className="eyebrow-line" /></div>
+      <h1 id="page-title">{editing ? 'Edit intake' : 'Create intake'}<span className="heading-period">.</span></h1>
+      <p>{editing ? 'Correct the details below. We’ll update the summary and triage when you save.' : 'Capture the essentials. We’ll summarize and triage the intake when you create it.'}</p>
     </div>
     <form className="create-card" onSubmit={(event) => void handleSubmit(event)}>
       <div className="form-intro"><span>INTAKE DETAILS</span><p>All fields are required.</p></div>
@@ -110,7 +114,7 @@ function CreateIntakeForm({ onCancel, onCreated }: { onCancel: () => void; onCre
         <label className="form-field"><span>Industry</span><input required disabled={submitting} value={fields.industry} onChange={(event) => updateField('industry', event.target.value)} placeholder="e.g. Retail" /></label>
       </div>
       {submitError && <div className="form-error" role="alert">{submitError}</div>}
-      <div className="form-actions"><button className="cancel-button" type="button" disabled={submitting} onClick={onCancel}>Cancel</button><button className="create-button" type="submit" disabled={submitting}>{submitting ? <><span className="button-spinner" /> Creating and generating summary…</> : <><Icon name="plus" size={17} /> Create intake</>}</button></div>
+      <div className="form-actions"><button className="cancel-button" type="button" disabled={submitting} onClick={onCancel}>Cancel</button><button className="create-button" type="submit" disabled={submitting}>{submitting ? <><span className="button-spinner" /> {editing ? 'Saving and updating summary…' : 'Creating and generating summary…'}</> : editing ? 'Save changes' : <><Icon name="plus" size={17} /> Create intake</>}</button></div>
       {submitting && <p className="submit-note" role="status">Saving your intake and waiting for AI triage to finish. Keep this page open.</p>}
     </form>
   </div>
@@ -122,9 +126,13 @@ function App() {
   const [error, setError] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [query, setQuery] = useState('')
-  const [view, setView] = useState<'list' | 'create'>(() => window.location.pathname === '/new' ? 'create' : 'list')
+  const [view, setView] = useState<'list' | 'create' | 'edit'>(() => window.location.pathname === '/new' ? 'create' : /^\/intakes\/\d+\/edit$/.test(window.location.pathname) ? 'edit' : 'list')
+  const [editingId, setEditingId] = useState<number | null>(() => Number(window.location.pathname.match(/^\/intakes\/(\d+)\/edit$/)?.[1]) || null)
   const [createdNotice, setCreatedNotice] = useState('')
   const [createdWithoutTriage, setCreatedWithoutTriage] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const lastSelectedRef = useRef<HTMLButtonElement | null>(null)
 
@@ -152,7 +160,12 @@ function App() {
   }, [loadIntakes])
 
   useEffect(() => {
-    const syncView = () => setView(window.location.pathname === '/new' ? 'create' : 'list')
+    const syncView = () => {
+      const id = Number(window.location.pathname.match(/^\/intakes\/(\d+)\/edit$/)?.[1]) || null
+      setEditingId(id)
+      setSelectedId(null)
+      setView(window.location.pathname === '/new' ? 'create' : id ? 'edit' : 'list')
+    }
     window.addEventListener('popstate', syncView)
     return () => window.removeEventListener('popstate', syncView)
   }, [])
@@ -160,9 +173,12 @@ function App() {
   function navigate(next: 'list' | 'create') {
     window.history.pushState({}, '', next === 'create' ? '/new' : '/')
     setView(next)
+    setEditingId(null)
     setCreatedNotice('')
     setCreatedWithoutTriage(false)
     setSelectedId(null)
+    setConfirmingDelete(false)
+    setDeleteError('')
   }
 
   function handleCreated(created: Intake) {
@@ -179,24 +195,68 @@ function App() {
     setSelectedId(created.id)
   }
 
+  function startEdit(intake: Intake) {
+    window.history.pushState({}, '', `/intakes/${intake.id}/edit`)
+    setEditingId(intake.id)
+    setSelectedId(null)
+    setView('edit')
+    setCreatedNotice('')
+  }
+
+  function handleUpdated(updated: Intake) {
+    setIntakes((current) => current.map((intake) => intake.id === updated.id ? updated : intake))
+    setCreatedNotice(`“${updated.title}” was updated.${updated.triage_status === 'unavailable' ? ' AI triage is unavailable; you can still review the intake.' : ''}`)
+    setCreatedWithoutTriage(updated.triage_status === 'unavailable')
+    window.history.replaceState({}, '', '/')
+    setView('list')
+    setEditingId(null)
+    setSelectedId(updated.id)
+  }
+
+  function closeDetails() {
+    setSelectedId(null)
+    setConfirmingDelete(false)
+    setDeleteError('')
+    lastSelectedRef.current?.focus()
+  }
+
+  async function handleDelete(intake: Intake) {
+    if (deleting) return
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      const response = await fetch(`/api/intakes/${intake.id}`, { method: 'DELETE' })
+      if (!response.ok) throw new Error(`The intake could not be deleted (${response.status}).`)
+      setIntakes((current) => current.filter((item) => item.id !== intake.id))
+      setSelectedId(null)
+      setConfirmingDelete(false)
+      setCreatedNotice(`“${intake.title}” was deleted.`)
+      setCreatedWithoutTriage(false)
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : 'The intake could not be deleted. Try again.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   useEffect(() => {
     if (selectedId === null) return
     closeButtonRef.current?.focus()
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setSelectedId(null)
-        lastSelectedRef.current?.focus()
+        if (!deleting) closeDetails()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedId])
+  }, [selectedId, deleting])
 
   const visibleIntakes = intakes.filter((intake) =>
     [intake.title, intake.description, intake.industry, intake.summary ?? '']
       .some((value) => value.toLowerCase().includes(query.trim().toLowerCase())),
   )
   const selected = intakes.find((intake) => intake.id === selectedId)
+  const editing = intakes.find((intake) => intake.id === editingId)
 
   return (
     <div className="app-shell">
@@ -209,11 +269,11 @@ function App() {
 
       <main className="main-content">
         <header className="topbar">
-          <div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-divider">/</span><strong>{view === 'create' ? 'New intake' : 'Intakes'}</strong></div>
+          <div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-divider">/</span><strong>{view === 'create' ? 'New intake' : view === 'edit' ? 'Edit intake' : 'Intakes'}</strong></div>
           {view === 'list' && <button className="topbar-create" type="button" onClick={() => navigate('create')}><Icon name="plus" size={17} /> New intake</button>}
         </header>
 
-        {view === 'create' ? <CreateIntakeForm onCancel={() => navigate('list')} onCreated={handleCreated} /> : <div className="page-content">
+        {view === 'create' ? <IntakeForm onCancel={() => navigate('list')} onSaved={handleCreated} /> : view === 'edit' ? editing ? <IntakeForm key={editing.id} intake={editing} onCancel={() => navigate('list')} onSaved={handleUpdated} /> : <div className="page-content"><div className="state-panel" role={loading ? 'status' : 'alert'}><h2>{loading ? 'Loading intake' : 'Intake not found'}</h2>{!loading && <button className="primary-button" onClick={() => navigate('list')}>Back to intakes</button>}</div></div> : <div className="page-content">
           {createdNotice && <div className={`success-notice ${createdWithoutTriage ? 'warning-notice' : ''}`} role={createdWithoutTriage ? 'alert' : 'status'}><span className="success-dot" />{createdNotice}<button type="button" aria-label="Dismiss notice" onClick={() => setCreatedNotice('')}><Icon name="close" size={16} /></button></div>}
           <section className="page-heading" aria-labelledby="page-title">
             <div>
@@ -260,9 +320,9 @@ function App() {
         </div>}
       </main>
 
-      {selected && <div className="drawer-layer" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedId(null) }}>
+      {selected && <div className="drawer-layer" onMouseDown={(event) => { if (event.target === event.currentTarget && !deleting) closeDetails() }}>
         <aside className="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="detail-title">
-          <div className="drawer-top"><span>INTAKE / {String(selected.id).padStart(3, '0')}</span><button ref={closeButtonRef} className="icon-button" type="button" aria-label="Close details" onClick={() => { setSelectedId(null); lastSelectedRef.current?.focus() }}><Icon name="close" size={20} /></button></div>
+          <div className="drawer-top"><span>INTAKE / {String(selected.id).padStart(3, '0')}</span><button ref={closeButtonRef} className="icon-button" type="button" aria-label="Close details" disabled={deleting} onClick={closeDetails}><Icon name="close" size={20} /></button></div>
           <div className="drawer-content">
             <div className="drawer-eyebrow">OPPORTUNITY DETAILS</div>
             <h2 id="detail-title">{selected.title}</h2>
@@ -274,6 +334,14 @@ function App() {
               : <section className="detail-section ai-section"><h3><Icon name="spark" size={18} /> AI summary</h3><p>{selected.summary}</p></section>}
             {selected.tags && <section className="detail-section"><h3>Classification</h3><div className="tags"><span>{formatTag(selected.tags.industry)}</span><span>{formatTag(selected.tags.budget)} budget</span><span>{formatTag(selected.tags.timeline)} timeline</span></div></section>}
             {selected.risks && selected.risks.length > 0 && <section className="detail-section"><h3>Risks to review</h3><ul className="risk-list">{selected.risks.map((risk, index) => <li key={`${index}-${risk}`}>{risk}</li>)}</ul></section>}
+            <button className="edit-intake-button" type="button" onClick={() => startEdit(selected)}>Edit intake</button>
+            <div className="delete-section">
+              {confirmingDelete ? <>
+                <p>Delete this intake permanently?</p>
+                <div className="delete-actions"><button className="cancel-button" type="button" disabled={deleting} onClick={() => { setConfirmingDelete(false); setDeleteError('') }}>Cancel</button><button className="delete-confirm-button" type="button" disabled={deleting} onClick={() => void handleDelete(selected)}>{deleting ? 'Deleting…' : 'Delete intake'}</button></div>
+              </> : <button className="delete-start-button" type="button" onClick={() => { setConfirmingDelete(true); setDeleteError('') }}>Delete intake</button>}
+              {deleteError && <p className="delete-error" role="alert">{deleteError}</p>}
+            </div>
           </div>
         </aside>
       </div>}
