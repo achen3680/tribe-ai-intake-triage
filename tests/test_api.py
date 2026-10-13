@@ -1,0 +1,61 @@
+"""Tests for the intake creation endpoint."""
+
+from datetime import datetime, timezone
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
+from backend.API import app
+from backend.models import Intake
+
+
+VALID_INTAKE = {
+    "title": "Customer support assistant",
+    "description": "Answer support questions.",
+    "budget_range": "$25k-$50k",
+    "timeline": "3 months",
+    "industry": "Retail",
+}
+
+
+@pytest.fixture
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_post_intake_creates_and_returns_saved_record(client):
+    response = client.post("/intakes", json={**VALID_INTAKE, "title": "  Pilot  "})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["id"] == 1
+    assert body["title"] == "Pilot"
+    assert {key: body[key] for key in VALID_INTAKE if key != "title"} == {
+        key: value for key, value in VALID_INTAKE.items() if key != "title"
+    }
+    assert datetime.fromisoformat(body["created_at"].replace("Z", "+00:00")).tzinfo == timezone.utc
+
+    with Session(app.state.engine) as session:
+        saved = session.get(Intake, body["id"])
+        assert saved is not None
+        assert saved.title == "Pilot"
+
+
+@pytest.mark.parametrize("field", VALID_INTAKE)
+@pytest.mark.parametrize("invalid_value", [None, "", "   "])
+def test_post_intake_rejects_missing_or_blank_fields(client, field, invalid_value):
+    payload = VALID_INTAKE.copy()
+    if invalid_value is None:
+        payload.pop(field)
+    else:
+        payload[field] = invalid_value
+
+    response = client.post("/intakes", json=payload)
+
+    assert response.status_code == 422
+    with Session(app.state.engine) as session:
+        assert session.scalar(select(func.count()).select_from(Intake)) == 0

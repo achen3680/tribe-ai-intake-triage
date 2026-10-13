@@ -1,2 +1,6 @@
 SQLAlchemy>=2.0,<3.0
 pytest>=7,<9
+fastapi>=0.100,<1.0
+pydantic>=2.0,<3.0
+uvicorn>=0.20,<1.0
+httpx>=0.24,<1.0
