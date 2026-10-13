@@ -7,6 +7,7 @@ from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
 from backend.database import init_db, make_engine
+from backend.intakes import create_intake
 from backend.models import Intake
 
 
@@ -44,3 +45,29 @@ def test_intake_table_and_persistence(tmp_path):
         assert saved.title == "Pilot"
         assert saved.created_at == original_created_at
         assert saved.created_at.tzinfo == timezone.utc
+
+
+def test_create_intake_saves_sample_data(tmp_path):
+    engine = make_engine(f"sqlite:///{tmp_path / 'sample.db'}")
+    init_db(engine)
+
+    created = create_intake(
+        title="Customer support assistant",
+        description="Answer support questions from the knowledge base.",
+        budget_range="$25k-$50k",
+        timeline="3 months",
+        industry="Retail",
+        engine=engine,
+    )
+
+    assert created.id == 1
+    assert created.created_at.tzinfo == timezone.utc
+    with Session(engine) as session:
+        saved = session.scalar(select(Intake).where(Intake.id == created.id))
+        assert saved is not None
+        assert saved.title == "Customer support assistant"
+        assert saved.description == "Answer support questions from the knowledge base."
+        assert saved.budget_range == "$25k-$50k"
+        assert saved.timeline == "3 months"
+        assert saved.industry == "Retail"
+        assert saved.created_at == created.created_at

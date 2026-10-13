@@ -12,4 +12,8 @@ Run `python3 -m backend.database` from this directory to create the SQLite
 and `created_at` (a UTC `datetime` assigned when the object is created). The
 database also assigns each record an integer primary key.
 
+Call `backend.intakes.create_intake` with the five string fields to save a new
+record. It assigns `created_at` and returns the saved intake with its database
+ID. Pass an `engine` to target a different initialized database.
+
 Run the database test with `python3 -m pytest tests/test_database.py`.
