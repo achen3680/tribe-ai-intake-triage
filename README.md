@@ -4,7 +4,7 @@
 
 Install the backend dependency with `python3 -m pip install -r requirements.txt`.
 Run `python3 -m backend.database` from this directory to create the SQLite
-`intakes` table. The default database is `intakes.db` in this directory. Set
+`intakes` table. The default database is `backend/data/intakes.db`. Set
 `DATABASE_URL` to use another SQLite database URL.
 
 `backend.models.Intake` is a SQLAlchemy mapped dataclass. Its intake fields are

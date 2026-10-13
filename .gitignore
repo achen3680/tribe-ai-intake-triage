@@ -5,6 +5,7 @@ node_modules/
 .next/
 dist/
 build/
+backend/data/
 *.db
 *.db-shm
 *.db-wal
