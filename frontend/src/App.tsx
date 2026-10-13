@@ -124,6 +124,7 @@ function App() {
   const [query, setQuery] = useState('')
   const [view, setView] = useState<'list' | 'create'>(() => window.location.pathname === '/new' ? 'create' : 'list')
   const [createdNotice, setCreatedNotice] = useState('')
+  const [createdWithoutTriage, setCreatedWithoutTriage] = useState(false)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const lastSelectedRef = useRef<HTMLButtonElement | null>(null)
 
@@ -160,6 +161,7 @@ function App() {
     window.history.pushState({}, '', next === 'create' ? '/new' : '/')
     setView(next)
     setCreatedNotice('')
+    setCreatedWithoutTriage(false)
     setSelectedId(null)
   }
 
@@ -171,6 +173,7 @@ function App() {
     setCreatedNotice(created.triage_status === 'complete'
       ? `“${created.title}” was created and triaged.`
       : `“${created.title}” was saved. AI triage is unavailable; you can still review the intake.`)
+    setCreatedWithoutTriage(created.triage_status === 'unavailable')
     window.history.replaceState({}, '', '/')
     setView('list')
     setSelectedId(created.id)
@@ -211,7 +214,7 @@ function App() {
         </header>
 
         {view === 'create' ? <CreateIntakeForm onCancel={() => navigate('list')} onCreated={handleCreated} /> : <div className="page-content">
-          {createdNotice && <div className="success-notice" role="status"><span className="success-dot" />{createdNotice}<button type="button" aria-label="Dismiss notice" onClick={() => setCreatedNotice('')}><Icon name="close" size={16} /></button></div>}
+          {createdNotice && <div className={`success-notice ${createdWithoutTriage ? 'warning-notice' : ''}`} role={createdWithoutTriage ? 'alert' : 'status'}><span className="success-dot" />{createdNotice}<button type="button" aria-label="Dismiss notice" onClick={() => setCreatedNotice('')}><Icon name="close" size={16} /></button></div>}
           <section className="page-heading" aria-labelledby="page-title">
             <div>
               <div className="eyebrow">PROJECT PIPELINE <span className="eyebrow-line" /></div>
@@ -267,7 +270,8 @@ function App() {
             <div className="detail-divider" />
             <section className="detail-section"><h3>Description</h3><p>{selected.description}</p></section>
             <div className="detail-facts"><div><span>BUDGET RANGE</span><strong>{selected.budget_range}</strong></div><div><span>TIMELINE</span><strong>{selected.timeline}</strong></div></div>
-            <section className="detail-section ai-section"><h3><Icon name="spark" size={18} /> AI summary</h3><p>{selected.summary || 'AI triage is unavailable for this intake. The submitted details are still saved.'}</p></section>
+            {selected.triage_status === 'unavailable' ? <section className="detail-section ai-section ai-unavailable" role="alert"><h3>AI triage unavailable</h3><p>This intake was saved, but the summary, tags, and risks could not be generated. Review the submitted details while triage is unavailable.</p></section>
+              : <section className="detail-section ai-section"><h3><Icon name="spark" size={18} /> AI summary</h3><p>{selected.summary}</p></section>}
             {selected.tags && <section className="detail-section"><h3>Classification</h3><div className="tags"><span>{formatTag(selected.tags.industry)}</span><span>{formatTag(selected.tags.budget)} budget</span><span>{formatTag(selected.tags.timeline)} timeline</span></div></section>}
             {selected.risks && selected.risks.length > 0 && <section className="detail-section"><h3>Risks to review</h3><ul className="risk-list">{selected.risks.map((risk, index) => <li key={`${index}-${risk}`}>{risk}</li>)}</ul></section>}
           </div>

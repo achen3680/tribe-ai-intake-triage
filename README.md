@@ -19,6 +19,10 @@ Run `npm run build` from `frontend/` to type-check and build the production
 assets. A production host must route `/api/*` to the FastAPI server as the
 development proxy does.
 
+Run `npm test` from `frontend/` to check the create flow when AI triage is
+unavailable. The test uses a mock API response, so it does not create a real
+intake or call Claude.
+
 ## Database setup
 
 Install the backend dependency with `python3 -m pip install -r requirements.txt`.
