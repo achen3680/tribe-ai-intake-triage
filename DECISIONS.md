@@ -37,3 +37,4 @@
 - Work with the client to define the tag taxonomy, then evaluate tag accuracy against representative intakes.
 - Add a few examples to the prompt that show the client's preferred summary style.
 - Add authentication and user assignments if the workflow needs named owners.
+- Add further AI reliability, guardrails, and retries
