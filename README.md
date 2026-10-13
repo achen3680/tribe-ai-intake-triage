@@ -1,5 +1,13 @@
 # Intake triage app
 
+## Run with Docker Compose
+
+```sh
+docker compose up --build
+```
+
+Open **http://127.0.0.1:5173/**. The API is at **http://127.0.0.1:8000/** and its interactive docs are at **http://127.0.0.1:8000/docs**. Stop with `docker compose down`. SQLite data is kept in the `sqlite_data` volume across restarts; `docker compose down -v` also removes that data.
+
 ## Frontend
 
 From this directory, start the API with `python3 -m uvicorn backend.api:app --reload`.
