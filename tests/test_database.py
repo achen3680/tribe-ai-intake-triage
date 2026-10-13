@@ -3,6 +3,7 @@
 from dataclasses import is_dataclass
 from datetime import datetime, timezone
 
+import pytest
 from sqlalchemy import inspect, select
 from sqlalchemy.orm import Session
 
@@ -71,3 +72,26 @@ def test_create_intake_saves_sample_data(tmp_path):
         assert saved.timeline == "3 months"
         assert saved.industry == "Retail"
         assert saved.created_at == created.created_at
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ("title", "description", "budget_range", "timeline", "industry"),
+)
+def test_create_intake_requires_each_field(tmp_path, missing_field):
+    engine = make_engine(f"sqlite:///{tmp_path / 'missing-field.db'}")
+    init_db(engine)
+    data = {
+        "title": "Customer support assistant",
+        "description": "Answer support questions.",
+        "budget_range": "$25k-$50k",
+        "timeline": "3 months",
+        "industry": "Retail",
+    }
+    data.pop(missing_field)
+
+    with pytest.raises(TypeError, match=missing_field):
+        create_intake(**data, engine=engine)
+
+    with Session(engine) as session:
+        assert session.scalar(select(Intake)) is None
