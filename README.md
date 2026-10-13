@@ -29,3 +29,8 @@ returns HTTP 201 with those fields plus `id` and `created_at`. Missing, empty,
 or invalid fields return HTTP 422 without creating a record.
 
 Run API tests with `python3 -m pytest tests/test_api.py`.
+
+`GET /intakes` returns all saved intakes in ID order (or an empty array).
+`GET /intakes/{intake_id}` returns one intake by its integer ID, or HTTP 404
+when the ID does not exist. Both GET responses use the same fields as the
+successful POST response.

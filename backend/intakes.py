@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,32 @@ def create_intake(
             session.commit()
             session.refresh(intake)
             return intake
+    finally:
+        if owns_engine:
+            engine.dispose()
+
+
+def list_intakes(*, engine: Engine | None = None) -> list[Intake]:
+    """Return every intake in ID order."""
+
+    owns_engine = engine is None
+    engine = engine or make_engine()
+    try:
+        with Session(engine) as session:
+            return list(session.scalars(select(Intake).order_by(Intake.id)))
+    finally:
+        if owns_engine:
+            engine.dispose()
+
+
+def get_intake(intake_id: int, *, engine: Engine | None = None) -> Intake | None:
+    """Return an intake by ID, or None when it does not exist."""
+
+    owns_engine = engine is None
+    engine = engine or make_engine()
+    try:
+        with Session(engine) as session:
+            return session.get(Intake, intake_id)
     finally:
         if owns_engine:
             engine.dispose()

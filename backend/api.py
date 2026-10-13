@@ -1,15 +1,15 @@
-"""HTTP entry point for creating intakes."""
+"""HTTP entry points for creating and reading intakes."""
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from backend.database import init_db, make_engine
-from backend.intakes import create_intake
+from backend.intakes import create_intake, get_intake, list_intakes
 
 
 class CreateIntakeRequest(BaseModel):
@@ -56,4 +56,18 @@ app = FastAPI(lifespan=lifespan)
 @app.post("/intakes", response_model=IntakeResponse, status_code=status.HTTP_201_CREATED)
 def post_intake(payload: CreateIntakeRequest, request: Request) -> IntakeResponse:
     intake = create_intake(**payload.model_dump(), engine=request.app.state.engine)
+    return IntakeResponse.model_validate(intake, from_attributes=True)
+
+
+@app.get("/intakes", response_model=list[IntakeResponse])
+def get_intakes(request: Request) -> list[IntakeResponse]:
+    intakes = list_intakes(engine=request.app.state.engine)
+    return [IntakeResponse.model_validate(intake, from_attributes=True) for intake in intakes]
+
+
+@app.get("/intakes/{intake_id}", response_model=IntakeResponse)
+def get_intake_detail(intake_id: int, request: Request) -> IntakeResponse:
+    intake = get_intake(intake_id, engine=request.app.state.engine)
+    if intake is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Intake not found")
     return IntakeResponse.model_validate(intake, from_attributes=True)

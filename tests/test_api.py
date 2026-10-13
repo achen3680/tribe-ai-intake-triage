@@ -1,4 +1,4 @@
-"""Tests for the intake creation endpoint."""
+"""Tests for the intake API endpoints."""
 
 from datetime import datetime, timezone
 
@@ -59,3 +59,38 @@ def test_post_intake_rejects_missing_or_blank_fields(client, field, invalid_valu
     assert response.status_code == 422
     with Session(app.state.engine) as session:
         assert session.scalar(select(func.count()).select_from(Intake)) == 0
+
+
+def test_get_intakes_returns_all_saved_intakes(client):
+    assert client.get("/intakes").json() == []
+
+    first = client.post("/intakes", json=VALID_INTAKE).json()
+    second_payload = {
+        **VALID_INTAKE,
+        "title": "Inventory forecasting pilot",
+        "industry": "Manufacturing",
+    }
+    second = client.post("/intakes", json=second_payload).json()
+
+    response = client.get("/intakes")
+
+    assert response.status_code == 200
+    assert response.json() == [first, second]
+
+
+def test_get_intake_by_id_returns_saved_intake(client):
+    first = client.post("/intakes", json=VALID_INTAKE).json()
+    second = client.post("/intakes", json={**VALID_INTAKE, "title": "Another intake"}).json()
+
+    response = client.get(f"/intakes/{first['id']}")
+
+    assert response.status_code == 200
+    assert response.json() == first
+    assert response.json() != second
+
+
+def test_get_intake_by_id_returns_404_when_missing(client):
+    response = client.get("/intakes/999")
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Intake not found"}
