@@ -1,6 +1,17 @@
-# Intake triage app
+# Intake triage
 
-## Run with Docker Compose
+## A · How to run
+
+### Prerequisites
+
+- **Docker Compose** for the simplest setup, or **Python 3.12+** and **Node.js 22+** to run the services directly.
+- An Anthropic API key to generate AI triage. The app still saves intakes without one and marks them **Needs review**.
+
+### Install and environment
+
+From this directory, copy `.env.example` to `.env` and set `ANTHROPIC_API_KEY` if you want AI triage. `ANTHROPIC_MODEL` is optional; the default is `claude-haiku-4-5-20251001`. Keep `.env` out of Git.
+
+### Run with Docker Compose
 
 ```sh
 docker compose up --build
@@ -8,97 +19,58 @@ docker compose up --build
 
 Open **http://127.0.0.1:5173/**. The API is at **http://127.0.0.1:8000/** and its interactive docs are at **http://127.0.0.1:8000/docs**. Stop with `docker compose down`. SQLite data is kept in the `sqlite_data` volume across restarts; `docker compose down -v` also removes that data.
 
-## Frontend
+### Run backend and frontend directly
 
-From this directory, start the API with `python3 -m uvicorn backend.api:app --reload`.
-In another terminal, run `cd frontend`, `npm install`, and `npm run dev`, then open
-`http://127.0.0.1:5173/`. The landing page loads all saved intakes automatically
-(newest first), with search and a detail drawer. Use **New intake** in the top
-right to enter the five required fields. Creating an intake waits for the API's
-AI triage to finish, then returns to the list and opens the saved intake. If AI
-triage fails, the intake is still saved and shown with a **Needs review** status.
-The Vite development server
-proxies `/api/*` to the FastAPI server on port 8000, so both servers must be
-running. The page shows loading, empty, and connection error states. To proxy
-to a different API server during development, set `VITE_API_PROXY_TARGET` before
-running `npm run dev`.
+From this directory, install the backend dependencies and start the API:
 
-Run `npm run build` from `frontend/` to type-check and build the production
-assets. A production host must route `/api/*` to the FastAPI server as the
-development proxy does.
+```sh
+python3 -m pip install -r requirements.txt
+python3 -m uvicorn backend.api:app --reload
+```
 
-Run `npm test` from `frontend/` to check the create flow when AI triage is
-unavailable. The test uses a mock API response, so it does not create a real
-intake or call Claude.
+In a second terminal, start the frontend:
 
-## Database setup
+```sh
+cd frontend
+npm ci
+npm run dev
+```
 
-Install the backend dependency with `python3 -m pip install -r requirements.txt`.
-Run `python3 -m backend.database` from this directory to create the SQLite
-`intakes` table. The default database is `backend/data/intakes.db`. Set
-`DATABASE_URL` to use another SQLite database URL.
+Open **http://127.0.0.1:5173/**. The Vite server forwards `/api/*` to port 8000. The API creates the SQLite table on startup and stores records in `backend/data/intakes.db` by default. Set `DATABASE_URL` to use another SQLite database URL; set `VITE_API_PROXY_TARGET` before `npm run dev` if the API is on another address.
 
-`backend.models.Intake` is a SQLAlchemy mapped dataclass. Its intake fields are
-`title`, `description`, `budget_range`, `timeline`, `industry` (all strings),
-and `created_at` (a UTC `datetime` assigned when the object is created). The
-database also assigns each record an integer primary key.
+## B · What you built
 
-Call `backend.intakes.create_intake` with the five string fields to save a new
-record. It assigns `created_at` and returns the saved intake with its database
-ID. Pass an `engine` to target a different initialized database.
+- A React/Vite intake workspace backed by a FastAPI API and persistent SQLite storage.
+- A **create → list → detail** flow: enter a title, description, budget range, timeline, and industry; find saved intakes with search; open one to see its details. You can also edit an intake or delete it after confirmation.
+- On creation or edit, Claude generates a 2–3 sentence summary, three tags (industry, budget, timeline), and a 1–5 item risk checklist. The API validates and saves those results. If triage fails or no key is configured, the intake remains saved with **Needs review** and no stale AI results.
+- Loading, empty, search with no results, form validation, submission progress, and visible API error states are included.
 
-Run the database test with `python3 -m pytest tests/test_database.py`.
+## C · Verification
 
-## Create intake API
+Run the backend suite from this directory and the frontend tests and build from `frontend/`:
 
-Install dependencies with `python3 -m pip install -r requirements.txt`, then run
-`python3 -m uvicorn backend.api:app --reload` from this directory. The API creates
-the SQLite table on startup. `POST /intakes` accepts JSON with `title`,
-`description`, `budget_range`, `timeline`, and `industry`. Every field must be a
-nonempty string; whitespace around values is removed. A successful request
-returns HTTP 201 with those fields plus `id`, `created_at`, and the AI fields
-described below. Missing, empty,
-or invalid fields return HTTP 422 without creating a record.
+```sh
+python3 -m pytest -q
+cd frontend
+npm test
+npm run build
+```
 
-Run API tests with `python3 -m pytest tests/test_api.py`.
+Current local results: **35 backend tests passed, 1 live AI test skipped; 6 frontend tests passed; the frontend production build succeeded**. Backend tests cover persistence, API create/list/detail/edit/delete behavior, validation, and AI failure handling. Frontend tests cover empty state and key create, edit, and delete flows with mocked API responses. These normal tests do not call Claude.
 
-`GET /intakes` returns all saved intakes in ID order (or an empty array).
-`GET /intakes/{intake_id}` returns one intake by its integer ID, or HTTP 404
-when the ID does not exist. Both GET responses use the same fields as the
-successful POST response.
+To verify live AI generation and persistence with a real key, run this from this directory:
 
-## AI triage on creation
+```sh
+RUN_LIVE_AI_TESTS=1 python3 -m pytest tests/test_ai_integration.py -q
+```
 
-Put `ANTHROPIC_API_KEY` in `.env` in this directory (see `.env.example`), or
-export it in the server environment. Startup loads `.env` without overriding an
-exported value. `ANTHROPIC_MODEL` is optional and defaults to
-`claude-haiku-4-5-20251001`. Restart the server after changing `.env`.
+This test makes at least two billable Anthropic API calls and was **not run** for the results above.
 
-`POST /intakes` first saves the submitted fields, then sends them to Claude using
-its JSON-schema structured output mode. When triage succeeds, it persists a 2–3 sentence `summary`, a
-`tags` object with exactly `industry`, `budget`, and `timeline`, and a `risks`
-array of 1–5 checklist items. The three tag slots use these draft categories:
+The decision log also records manual browser testing and a Codex computer-use walkthrough acting as an end user. Use this sample to repeat the intake flow in the browser:
 
-| Slot | Allowed values | Rule |
-| --- | --- | --- |
-| Industry | `healthcare`, `financial-services`, `retail`, `manufacturing`, `technology`, `education`, `public-sector`, `other` | Closest match to the stated industry. |
-| Budget | `small`, `medium`, `large`, `unknown` | USD range midpoint: under $25k, $25k–$100k, over $100k; unknown if not interpretable. |
-| Timeline | `urgent`, `near-term`, `long-term`, `unknown` | Due within 4 weeks, 1–3 months, over 3 months; unknown if not interpretable. |
-
-The server validates AI output before attaching it to the saved intake. If
-Claude is unavailable or its output fails validation, `POST /intakes` still
-returns HTTP 201 with the saved intake. In that case, `summary`, `tags`, and
-`risks` are null and `triage_status` is `unavailable`; successful enrichment has
-`triage_status: "complete"`. The list and detail endpoints expose the same
-status. Existing rows from before this feature remain readable with null AI
-fields; startup adds the three columns to an existing SQLite table. Run all
-backend tests with `python3 -m pytest -q`.
-
-To verify the complete Claude path with a real API key, run
-`RUN_LIVE_AI_TESTS=1 python3 -m pytest tests/test_ai_integration.py -q`.
-The test creates two intakes in a temporary SQLite database, checks that each
-Claude response contains a valid summary, all three tags, and a risk checklist,
-then checks that list/detail responses and SQLite retain those outputs. It makes
-at least two billable API calls; a locally invalid Claude result is retried once.
-The normal test suite skips this test unless the flag is
-set.
+1. Start the app and open **http://127.0.0.1:5173/**. On a fresh database, confirm the empty state appears. Select **New intake**.
+2. Enter **Retail support pilot** as the title, **Build an assistant to help the support team answer order questions** as the description, **$25k–$50k** as the budget range, **3 months** as the timeline, and **Retail** as the industry. Select **Create intake**. The button should show progress while the request runs.
+3. Confirm the app returns to the list and opens the saved intake's detail view. Check that all five submitted fields are present. Close the detail, search for **Retail support**, and confirm the record appears; a search for an unrelated term should show the no-results state.
+4. Reload the page and open the intake again. Its fields should still be present, showing that SQLite persisted the record. With a valid Anthropic key, confirm a summary, industry/budget/timeline tags, and risk checklist appear. Without a key, confirm the intake is still saved and marked **Needs review**.
+5. Select **Edit intake**, change the title to **Retail support launch**, and save. Confirm the updated title appears and the AI triage is regenerated when a key is available. Then select **Delete intake**, confirm the prompt, and check that the record leaves the list.
+6. For error states, try submitting with a required field blank. Stop the API and reload the page; the connection error and **Try again** action should appear. Restart the API and use **Try again** to reload the list.
